@@ -1,12 +1,24 @@
 #include "debouncebutton.h"
+#include <Servo.h>
+
+Servo buttonMasher;
 
 struct DebounceButton toggleButton = {10, HIGH, false, HIGH, 0};
 struct DebounceButton momentaryButton = {11, HIGH, false, HIGH, 0};
 const int ledPin = 13;
 const unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
-// Variables will change:
-int ledState = LOW;         // the current state of the output pin
+const int servoPin = 9;
+const unsigned long servoDelayWhenDown = 50;
+const unsigned long servoDelayWhenUp = 50;
+const int servoDownPosition = 0;
+const int servoUpPosition = 20;
+
+boolean isActive = false;
+
+boolean servoIsDown = false;
+unsigned long servoLastSignalled = 0;
+
 
 
 void setupButton(struct DebounceButton *button) {
@@ -37,9 +49,13 @@ void setup() {
     setupButton(&toggleButton);
     setupButton(&momentaryButton);
     pinMode(ledPin, OUTPUT);
+    buttonMasher.attach(servoPin);
 
-    // set initial LED state
-    digitalWrite(ledPin, ledState);
+    // Set initial LED state
+    handleActiveChange(isActive);
+
+    // Set initial servo state
+    loopServo();
 }
 
 void loopButton(struct DebounceButton *button) {
@@ -74,18 +90,42 @@ void loop() {
     loopButton(&toggleButton);
     //printButtonState(&toggleButton);
     if (toggleButton.hasNewStableState && isPressed(toggleButton.stableState)) {
-        ledState = !ledState;
-        digitalWrite(ledPin, ledState);
+        isActive = !isActive;
+        handleActiveChange(isActive);
     }
 
     loopButton(&momentaryButton);
-    printButtonState(&momentaryButton);
+    //printButtonState(&momentaryButton);
     if (momentaryButton.hasNewStableState) {
-        if (isPressed(momentaryButton.stableState)) {
-            ledState = HIGH;
-        } else {
-            ledState = LOW;
+        isActive = isPressed(momentaryButton.stableState);
+        handleActiveChange(isActive);
+    }
+
+    loopServo();
+}
+
+void handleActiveChange(boolean isActive) {
+    if (isActive) {
+        digitalWrite(ledPin, HIGH);
+    } else {
+        digitalWrite(ledPin, LOW);
+    }
+}
+
+void loopServo() {
+    int servoDelay = servoIsDown ? servoDelayWhenDown : servoDelayWhenUp;
+    if ((millis() - servoLastSignalled) > servoDelay) {
+        // We are ready to signal again
+        if (servoIsDown) {
+            // No matter if we are active or not, we will no longer push the button
+            buttonMasher.write(servoUpPosition);
+            servoIsDown = false;
+            servoLastSignalled = millis();
+        } else if (isActive) {
+            // We are up, and ready to push the button again
+            buttonMasher.write(servoDownPosition);
+            servoIsDown = true;
+            servoLastSignalled = millis();
         }
-        digitalWrite(ledPin, ledState);
     }
 }
